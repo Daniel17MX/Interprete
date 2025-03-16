@@ -1,0 +1,539 @@
+options {
+  STATIC = false;
+  DEBUG_PARSER = false;
+  DEBUG_TOKEN_MANAGER = false;
+  LOOKAHEAD = 2;  // Aumentamos el lookahead global para resolver conflictos
+}
+
+PARSER_BEGIN(Compilador)
+
+import java.util.*;
+import java.io.*;
+
+public class Compilador {
+  // Tabla de símbolos para almacenar variables y sus tipos
+  static HashMap<String, String> tablaSimbolos = new HashMap<String, String>();
+  // Lista para almacenar errores semánticos
+  static ArrayList<String> erroresSemanticos = new ArrayList<String>();
+  // Lista para almacenar errores léxicos
+  static ArrayList<String> tablaErrores = new ArrayList<String>();
+
+  public static void main(String args[]) throws ParseException {
+    try {
+      Compilador parser = new Compilador(new FileInputStream(args[0]));
+      parser.programa();
+      System.out.println("Análisis completado con éxito.");
+
+      // Mostrar tabla de símbolos
+      System.out.println("\nTabla de símbolos:");
+      for (Map.Entry<String, String> entry : tablaSimbolos.entrySet()) {
+        System.out.println("Variable: " + entry.getKey() + ", Tipo: " + entry.getValue());
+      }
+
+      // Mostrar errores semánticos si existen
+      if (!erroresSemanticos.isEmpty()) {
+        System.out.println("\nErrores semánticos encontrados:");
+        for (String error : erroresSemanticos) {
+          System.out.println(error);
+        }
+      }
+
+      // Mostrar errores léxicos si existen - Corregido para usar la lista local
+      if (!tablaErrores.isEmpty()) {
+        System.out.println("\nErrores léxicos encontrados:");
+        for (String error : tablaErrores) {
+          System.out.println(error);
+        }
+      }
+
+    } catch (FileNotFoundException e) {
+      System.out.println("Archivo no encontrado: " + e.getMessage());
+    } catch (ParseException e) {
+      System.out.println("Error de sintaxis: " + e.getMessage());
+    }
+  }
+
+  // Método para verificar si una variable ya está declarada
+  private static boolean existeVariable(String nombre) {
+    return tablaSimbolos.containsKey(nombre);
+  }
+
+  // Método para agregar una variable a la tabla de símbolos
+  private static void agregarVariable(String nombre, String tipo) {
+    tablaSimbolos.put(nombre, tipo);
+  }
+
+  // Método para verificar compatibilidad de tipos
+  private static boolean sonTiposCompatibles(String tipoVar, String tipoValor) {
+    if (tipoVar.equals(tipoValor)) return true;
+    if (tipoVar.equals("flot") && tipoValor.equals("ent")) return true;
+    return false;
+  }
+
+  // Método para obtener el tipo de una variable
+  private static String obtenerTipo(String nombre) {
+    return tablaSimbolos.get(nombre);
+  }
+
+  // Método para obtener el tipo de un valor literal
+  private static String obtenerTipoValor(Token token) {
+    if (token.kind == ENTEROS) return "ent";
+    if (token.kind == NUMERODECIMAL) return "flot";
+    if (token.kind == VCAD) return "cad";
+    return "desconocido";
+  }
+
+  // Método para agregar un error semántico
+  private static void agregarErrorSemantico(String mensaje) {
+    erroresSemanticos.add(mensaje);
+  }
+
+  // Método para agregar un error léxico
+  private static void agregarErrorLexico(String mensaje) {
+    tablaErrores.add(mensaje);
+  }
+}
+
+PARSER_END(Compilador)
+
+// Tokens a ignorar
+SKIP: { " " |"\t" |"\r" }
+SPECIAL_TOKEN: { "\n" }
+
+// Definición de tokens
+TOKEN: //Variables
+{
+  <ENT: "ent"> |
+  <FLOT: "flot"> |
+  <BOOL: "bool"> |
+  <CAD: "cad"> |
+  <VAR: "var">
+}
+
+TOKEN: //Operadores Logicos-Aritmeticos
+{
+  <MAS: "mas"> |
+  <MENOS: "menos"> |
+  <MULT: "mult"> |
+  <DIV: "div"> |
+  <RES: "res"> |
+  <INC: "inc"> |
+  <DEC: "dec"> |
+  <AND: "AND"> |
+  <OR: "OR"> |
+  <NOT: "NOT">
+}
+
+TOKEN: //Comparadores
+{
+  <IGUALDAD: "=="> |
+  <IGUAL: "="> |
+  <DESIGUALDAD: "!="> |
+  <MAYOR: ">"> |
+  <MENOR: "<"> |
+  <MAYORIGUAL: ">="> |
+  <MENORIGUAL: "<=">
+}
+
+TOKEN: //DIGITOS
+{
+  <ENTEROS: (["0"-"9"])+> |
+  <NUMERODECIMAL: (["0"-"9"])*("."["0"-"9"]["0"-"9"])|(["0"-"9"])*("."["0"-"9"])+>
+}
+
+TOKEN: //CICLOS
+{
+  <FOR: "for"> |
+  <WHILE: "while">
+}
+
+TOKEN: //ARREGLOS
+{
+  <MATRIZ: "matrix"> |
+  <VECTOR: "vec">
+}
+
+TOKEN: //CONDICIONALES
+{
+  <SI: "SI"> |
+  <SINO: "SINO">
+}
+
+TOKEN: //LECTURA
+{
+  <LEER: "leer">
+}
+
+TOKEN: //ESCRITURA
+{
+  <ESCRIBIR: "escribir">
+}
+
+TOKEN: //SIMBOLOS DE DELIMITACION
+{
+  <PUNTO: "."> |
+  <DELIMITADOR: ";"> |
+  <COMA: ","> |
+  <CORCHIZQ: "["> |
+  <CORCHDER: "]"> |
+  <LLAVEIZQ: "{"> |
+  <LLAVEDER: "}"> |
+  <PARENIZQ: "("> |
+  <PARENDER: ")"> |
+  <CONCATENAR: "+">
+}
+
+TOKEN: //Palabras Reservadas
+{
+  <VOID: "void"> |
+  <PUBLICO: "publico"> |
+  <PRIVADO: "privado"> |
+  <ESTATICO: "estatico"> |
+  <RETURN: "return">
+}
+
+TOKEN:
+{
+  <MATH: "Math"> |
+  <ARRAYCLASS: "Array"> |
+  <RANDOMCLASS: "Random"> |
+  <TIMERCLASS: "Timer">
+}
+
+TOKEN: //FUNCIONES DE CLASES
+{
+  <RAMDONFUNC: (<RANDOMCLASS>)"."("next"|"equals")> |
+  <ARRAYFUNC: (<ARRAYCLASS>)"."("clear"|"clone"|"copy"|"reverse")> |
+  <TIMERFUNC: (<TIMERCLASS>)"."("start"|"stop")> |
+  <MATHFUNC: (<MATH>)"."("abs"|"acos"|"acosh"|"tan"|"cos"|"sen"|"random"|"sqrt")> |
+  <INICIO: "Inicio"> |
+  <FIN: "Fin"> |
+  <MAIN: "Main"|"main"> |
+  <PROC: "proc"> |
+  <FUNC: "func">
+}
+
+TOKEN: // IDENTIFICADOR
+{
+  <IDENTIFICADOR: ["a"-"z", "A"-"Z"](["a"-"z", "A"-"Z", "0"-"9", "_"])*>
+}
+
+TOKEN: //Reconocimiento de valores
+{
+  <VCAD: "\""(["a"-"z"]|["A"-"Z"]|["0"-"9"]|[","]|["."]|[" "]|[":"]|["="])+"\"">
+}
+
+TOKEN: // Manejo de Errores
+{
+  <ERROR: ~[]>
+}
+
+// Definición de la gramática - Análisis Sintáctico
+void programa() :
+{}
+{
+  <INICIO> <MAIN> <LLAVEIZQ>
+  (declaracion() | asignacion() | ciclo() | condicional() | llamadaFuncion() | declaracionFuncion())*
+  <LLAVEDER> <FIN>
+  <EOF>
+}
+
+void declaracion() :
+{
+  Token tipo, id;
+  String tipoAsignacion = null;
+}
+{
+  <VAR>
+  (
+    tipo = <ENT> | tipo = <FLOT> | tipo = <BOOL> | tipo = <CAD>
+  )
+  id = <IDENTIFICADOR>
+  {
+    if (existeVariable(id.image)) {
+      agregarErrorSemantico("Error semántico: Variable '" + id.image + "' ya declarada");
+    } else {
+      agregarVariable(id.image, tipo.image);
+    }
+  }
+  (
+    <IGUAL> tipoAsignacion = expresion()
+    {
+      // Verificar compatibilidad de tipos
+      if (!sonTiposCompatibles(tipo.image, tipoAsignacion)) {
+        agregarErrorSemantico("Error semántico: No se puede asignar un valor de tipo '" + tipoAsignacion +
+                             "' a una variable de tipo '" + tipo.image + "'");
+      }
+    }
+  )?
+  <DELIMITADOR>
+}
+
+void asignacion() :
+{
+  Token id;
+  String tipoVar, tipoValor;
+}
+{
+  id = <IDENTIFICADOR>
+  {
+    if (!existeVariable(id.image)) {
+      agregarErrorSemantico("Error semántico: Variable '" + id.image + "' no declarada");
+      tipoVar = "desconocido";
+    } else {
+      tipoVar = obtenerTipo(id.image);
+    }
+  }
+  <IGUAL> tipoValor = expresion()
+  {
+    if (existeVariable(id.image) && !sonTiposCompatibles(tipoVar, tipoValor)) {
+      agregarErrorSemantico("Error semántico: No se puede asignar un valor de tipo '" + tipoValor +
+                          "' a una variable de tipo '" + tipoVar + "'");
+    }
+  }
+  <DELIMITADOR>
+}
+
+String expresion() :
+{
+  String tipo1, tipo2;
+  String tipoResultante;
+}
+{
+  tipo1 = termino()
+  {
+    tipoResultante = tipo1;
+  }
+  (
+    operador() tipo2 = termino()
+    {
+      // Determinar el tipo resultante de la operación según las reglas
+      if (tipo1.equals("cad") || tipo2.equals("cad")) {
+        tipoResultante = "cad";
+      } else if (tipo1.equals("flot") || tipo2.equals("flot")) {
+        tipoResultante = "flot";
+      } else {
+        tipoResultante = "ent";
+      }
+    }
+  )*
+  {
+    return tipoResultante;
+  }
+}
+
+// Modificamos termino() para evitar conflictos y devolver el tipo
+String termino() :
+{
+  Token valor = null, id = null;
+  String tipo = "desconocido";
+}
+{
+  (
+    valor = <ENTEROS>
+    {
+      tipo = "ent";
+    }
+    |
+    valor = <NUMERODECIMAL>
+    {
+      tipo = "flot";
+    }
+    |
+    valor = <VCAD>
+    {
+      tipo = "cad";
+    }
+    |
+    (<PARENIZQ> tipo = expresion() <PARENDER>)
+    |
+    LOOKAHEAD(2)
+    tipo = llamadaFuncion()
+    |
+    id = <IDENTIFICADOR>
+    {
+      if (!existeVariable(id.image)) {
+        agregarErrorSemantico("Error semántico: Variable '" + id.image + "' no declarada");
+        tipo = "desconocido";
+      } else {
+        tipo = obtenerTipo(id.image);
+      }
+    }
+  )
+  {
+    return tipo;
+  }
+}
+
+void operador() :
+{}
+{
+  <MAS> | <MENOS> | <MULT> | <DIV> | <RES> | <AND> | <OR> | <CONCATENAR>
+}
+
+void ciclo() :
+{}
+{
+  cicloFor() | cicloWhile()
+}
+
+void cicloFor() :
+{}
+{
+  <FOR> <PARENIZQ> (declaracion() | asignacion()) condicion() <DELIMITADOR> incremento() <PARENDER>
+  bloque()
+}
+
+void cicloWhile() :
+{}
+{
+  <WHILE> <PARENIZQ> condicion() <PARENDER>
+  bloque()
+}
+
+void condicion() :
+{
+  Token id1 = null, id2 = null;
+}
+{
+  (
+    id1 = <IDENTIFICADOR>
+    {
+      if (!existeVariable(id1.image)) {
+        agregarErrorSemantico("Error semántico: Variable '" + id1.image + "' no declarada");
+      }
+    }
+    | <ENTEROS> | <NUMERODECIMAL>
+  )
+  operadorComparacion()
+  (
+    id2 = <IDENTIFICADOR>
+    {
+      if (!existeVariable(id2.image)) {
+        agregarErrorSemantico("Error semántico: Variable '" + id2.image + "' no declarada");
+      }
+    }
+    | <ENTEROS> | <NUMERODECIMAL>
+  )
+}
+
+void operadorComparacion() :
+{}
+{
+  <IGUALDAD> | <DESIGUALDAD> | <MAYOR> | <MENOR> | <MAYORIGUAL> | <MENORIGUAL>
+}
+
+void incremento() :
+{
+  Token id;
+}
+{
+  id = <IDENTIFICADOR>
+  {
+    if (!existeVariable(id.image)) {
+      agregarErrorSemantico("Error semántico: Variable '" + id.image + "' no declarada");
+    } else if (!obtenerTipo(id.image).equals("ent") && !obtenerTipo(id.image).equals("flot")) {
+      agregarErrorSemantico("Error semántico: El incremento solo se puede aplicar a variables numéricas");
+    }
+  }
+  (<INC> | <DEC>)
+}
+
+void bloque() :
+{}
+{
+  <LLAVEIZQ>
+  (declaracion() | asignacion() | ciclo() | condicional() | llamadaFuncion())*
+  <LLAVEDER>
+}
+
+void condicional() :
+{}
+{
+  <SI> <PARENIZQ> condicion() <PARENDER>
+  bloque()
+  (<SINO> bloque())?
+}
+
+// Modificamos llamadaFuncion() para evitar conflictos y devolver el tipo
+String llamadaFuncion() :
+{
+  Token id = null;
+  String tipo = "desconocido";  // Tipo por defecto
+}
+{
+  (
+    LOOKAHEAD(2)
+    (<MATHFUNC> { tipo = "flot"; }) |
+    (<RAMDONFUNC> { tipo = "ent"; }) |
+    (<ARRAYFUNC> { tipo = "void"; }) |
+    (<TIMERFUNC> { tipo = "void"; }) |
+    (<LEER> { tipo = "cad"; }) |
+    (<ESCRIBIR> { tipo = "void"; }) |
+    id = <IDENTIFICADOR>
+    {
+     // Aquí podríamos buscar el tipo de retorno de la función en una tabla de funciones
+
+    // Por ahora, asumimos que no podemos determinar el tipo
+    tipo = "desconocido";
+    }
+    )
+    <PARENIZQ> (parametrosLlamada())? <PARENDER> <DELIMITADOR>
+    {
+      return tipo;
+    }
+  }
+
+  void parametrosLlamada() :
+  {
+    String tipoParam;
+  }
+  {
+    tipoParam = expresion() (<COMA> tipoParam = expresion())*
+  }
+
+  void declaracionFuncion() :
+  {
+    Token tipo, id;
+  }
+  {
+    (<PROC> | <FUNC>)
+    (
+      tipo = <VOID> | tipo = <ENT> | tipo = <FLOT> | tipo = <BOOL> | tipo = <CAD>
+    )
+    id = <IDENTIFICADOR>
+    <PARENIZQ> (parametrosDeclaracion())? <PARENDER>
+    bloqueFuncion()
+  }
+
+  void parametrosDeclaracion() :
+  {
+    Token tipo, id;
+  }
+  {
+    (
+      tipo = <ENT> | tipo = <FLOT> | tipo = <BOOL> | tipo = <CAD> | tipo = <VAR>
+    )
+    id = <IDENTIFICADOR>
+    {
+      agregarVariable(id.image, tipo.image);
+    }
+    (<COMA> parametrosDeclaracion())?
+  }
+
+  void bloqueFuncion() :
+  {}
+  {
+    <LLAVEIZQ>
+    (declaracion() | asignacion() | ciclo() | condicional() | llamadaFuncion())*
+    (retorno())?
+    <LLAVEDER>
+  }
+
+  void retorno() :
+  {
+    String tipoRetorno;
+  }
+  {
+    <RETURN> tipoRetorno = expresion() <DELIMITADOR>
+  }

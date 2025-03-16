@@ -1,0 +1,43 @@
+Inicio Main {
+    var ent i = 0;
+    var ent suma = 0;
+    var flot promedio = 0.0;
+    var ent contador = 0;
+    var flot decimal = 10.5;
+
+    // For con incremento
+    for (var ent j = 1; j <= 10; j inc) {
+        suma = suma mas j;
+        contador inc;
+    }
+
+    // While con decrementos
+    while (i < 5) {
+        i inc;
+        decimal = decimal menos 0.5;
+    }
+
+    // Error en incremento: no se puede aplicar a cadenas
+    var cad texto = "Hola";
+    texto inc;  // Error: inc solo aplica a tipos numéricos
+
+    // Condicional con expresiones mixtas
+    SI (suma > 50) {
+        promedio = suma div contador;  // Correcto: resultado es flot
+        var ent valor = promedio;      // Error: asignación de flot a ent
+    } SINO {
+        var flot valor = suma;         // Correcto: asignación de ent a flot
+    }
+
+    // Ciclo for con asignación incorrecta en la inicialización
+    for (var ent x = 1.5; x < 10; x inc) {  // Error: inicialización con decimal
+        escribir("Valor de x:");
+        escribir(x);
+    }
+
+    // Condiciones con expresiones complejas
+    SI ((suma mas 10) > (decimal mult 2)) {  // Tipos compatibles en la condición
+        var ent temp = decimal;  // Error: asignación de flot a ent
+    }
+}
+Fin

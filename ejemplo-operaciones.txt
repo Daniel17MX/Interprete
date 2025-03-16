@@ -1,0 +1,34 @@
+Inicio Main {
+    var ent a = 10;
+    var ent b = 5;
+    var flot c = 7.5;
+    var flot d = 2.0;
+    var ent resultado1;
+    var flot resultado2;
+
+    // Operaciones entre enteros
+    resultado1 = a mas b;    // Correcto: ent + ent = ent
+    resultado1 = a menos b;  // Correcto: ent - ent = ent
+    resultado1 = a mult b;   // Correcto: ent * ent = ent
+    resultado1 = a div b;    // Correcto: ent / ent = ent (división entera)
+
+    // Operaciones mixtas
+    resultado2 = a mas c;    // Correcto: ent + flot = flot
+    resultado2 = c menos b;  // Correcto: flot - ent = flot
+    resultado2 = b mult d;   // Correcto: ent * flot = flot
+    resultado2 = c div a;    // Correcto: flot / ent = flot
+
+    // Error: asignación de operación mixta a entero
+    resultado1 = a mas c;    // Error: resultado es flot, no puede asignarse a ent
+    resultado1 = c menos a;  // Error: resultado es flot, no puede asignarse a ent
+
+    // Operaciones correctas
+    c = a mas b;             // Correcto: resultado ent puede asignarse a flot
+    c = c mas d;             // Correcto: flot + flot = flot
+
+    // Operaciones anidadas
+    resultado1 = a mas (b menos 2);            // Correcto: todas operaciones ent
+    resultado2 = (a mas b) mult (c menos d);   // Correcto: (ent+ent)*(flot-flot) = flot
+    resultado1 = (a mas b) div (c menos d);    // Error: resultado es flot
+}
+Fin

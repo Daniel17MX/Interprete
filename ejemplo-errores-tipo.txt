@@ -1,0 +1,30 @@
+Inicio Main {
+    var ent numero = 10.5;  // Error: asignación de decimal a entero
+    var flot decimal = 5.7;
+    var cad texto = "Prueba";
+    var ent contador = 1;
+
+    numero = 20;      // Correcto
+    numero = 15.3;    // Error: asignación de decimal a entero
+    decimal = 10;     // Correcto: asignación de entero a flot
+    decimal = 8.9;    // Correcto
+
+    // Error: asignación de resultado decimal a entero
+    numero = numero mas 2.5;
+
+    // Error: asignación de cadena a entero
+    numero = texto;
+
+    // Error: asignación de cadena a flot
+    decimal = "100";
+
+    SI (contador == 1) {
+        var ent x = 5.6;  // Error: asignación de decimal a entero
+    }
+
+    while (contador < 5) {
+        contador inc;
+        var ent valor = decimal;  // Error: asignación de flot a ent
+    }
+}
+Fin

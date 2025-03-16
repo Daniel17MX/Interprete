@@ -1,0 +1,34 @@
+Inicio Main {
+    
+    var ent contador = 1;
+    var flot precio = 19.9;
+    var flot cantidad = 10;
+    var cad nombre = "Producto";
+    
+    var ent edad;
+    var flot estatura;
+    
+    edad = 25;        
+    edad = 30.50;      
+    estatura = 1.75;  
+    estatura = 175;   
+    
+    contador = contador mas 1;  
+    precio = precio menos 5;    
+    
+    var flot total = precio mult cantidad;  
+    var ent unidades = cantidad;            
+    
+    var ent x = 5;
+    var ent y = 10;
+    var flot z = 2.50;
+    
+    var flot resultado1 = (x mas y) mult z;  
+    var ent resultado2 = x mas y;            
+    var ent resultado3 = (x mas y) div z;    
+    
+    var bool condicion = true;
+    var ent errorTipo = condicion;           
+    var flot errorTipo2 = nombre;            
+}
+Fin

@@ -1,0 +1,26 @@
+Inicio Main {
+    var ent contador = 10;
+    var ent resultado = 5;
+    var flot promedio = 8.5;
+    var flot suma = 10;  
+    var cad mensaje = "Hola mundo";
+
+    contador = 20;  
+    suma = 15.7;    
+    suma = 30;      
+
+    for (var ent i = 0; i < 10; i inc) {
+        resultado = resultado mas 1;  
+        suma = suma mas 2.5;          
+    }
+
+    SI (contador > 15) {
+        escribir("Contador es mayor que 15");
+    } SINO {
+        escribir("Contador es menor o igual que 15");
+    }
+
+    Math.sqrt(16);  
+    escribir(mensaje);
+}
+Fin

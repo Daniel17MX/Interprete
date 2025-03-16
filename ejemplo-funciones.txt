@@ -1,0 +1,31 @@
+Inicio Main {
+    var ent num = 10;
+    var flot decimal = 5.7;
+    var ent resultado1;
+    var flot resultado2;
+
+    // Llamadas a funciones matemáticas
+    resultado2 = Math.sqrt(16);       // Correcto: Math devuelve flot
+    resultado2 = Math.cos(num);       // Correcto: Math devuelve flot
+    resultado1 = Math.sqrt(16);       // Error: Math devuelve flot, no asignable a ent
+
+    // Funciones propias
+    func ent sumar(ent a, ent b) {
+        return a mas b;
+    }
+
+    func flot promediar(ent x, flot y) {
+        return (x mas y) div 2;
+    }
+
+    // Llamadas a las funciones
+    resultado1 = sumar(5, 10);        // Correcto: sumar devuelve ent
+    resultado2 = sumar(5, 10);        // Correcto: ent puede asignarse a flot
+    resultado2 = promediar(num, decimal);  // Correcto: promediar devuelve flot
+    resultado1 = promediar(num, decimal);  // Error: flot no puede asignarse a ent
+
+    // Funciones en expresiones
+    resultado2 = Math.sqrt(16) mas decimal;  // Correcto: flot + flot = flot
+    resultado1 = 10 mult sumar(2, 3);        // Correcto: ent * ent = ent
+}
+Fin

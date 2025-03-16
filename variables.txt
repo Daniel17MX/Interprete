@@ -1,0 +1,7 @@
+Inicio main {
+  var ent numero = 25.5;
+  var ent contador;
+  var flot promedio = 85;
+  var cad mensaje = "Hola Mundo";
+  var bool activo = 1;
+} Fin
