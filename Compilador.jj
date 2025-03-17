@@ -10,6 +10,7 @@ PARSER_BEGIN(Compilador)
 import java.util.*;
 import java.io.*;
 
+
 public class Compilador {
   // Tabla de símbolos para almacenar variables y sus tipos
   static HashMap<String, String> tablaSimbolos = new HashMap<String, String>();
@@ -18,11 +19,59 @@ public class Compilador {
   // Lista para almacenar errores léxicos
   static ArrayList<String> tablaErrores = new ArrayList<String>();
 
+// Raíz del AST
+  private NodoAST astRaiz;
+
+  class NodoAST {
+      private String valor;
+      private String tipo;
+      private ArrayList<NodoAST> hijos;
+
+      public NodoAST(String valor, String tipo) {
+          this.valor = valor;
+          this.tipo = tipo;
+          this.hijos = new ArrayList<NodoAST>();
+      }
+
+      public void agregarHijo(NodoAST hijo) {
+          this.hijos.add(hijo);
+      }
+
+      public String getValor() {
+          return valor;
+      }
+
+      public String getTipo() {
+          return tipo;
+      }
+
+      public ArrayList<NodoAST> getHijos() {
+          return hijos;
+      }
+
+      public void imprimirArbol(int nivel) {
+          String indentacion = "";
+          for (int i = 0; i < nivel; i++) {
+              indentacion += "  ";
+          }
+          System.out.println(indentacion + tipo + ": " + valor);
+          for (NodoAST hijo : hijos) {
+              hijo.imprimirArbol(nivel + 1);
+          }
+      }
+  }
+
   public static void main(String args[]) throws ParseException {
     try {
       Compilador parser = new Compilador(new FileInputStream(args[0]));
-      parser.programa();
+      parser.programa(); // Llamamos al parser
       System.out.println("Análisis completado con éxito.");
+
+      // Imprimir el AST
+      if (parser.astRaiz != null) {
+        System.out.println("\nÁrbol Sintáctico Abstracto:");
+        parser.astRaiz.imprimirArbol(0);
+      }
 
       // Mostrar tabla de símbolos
       System.out.println("\nTabla de símbolos:");
@@ -30,7 +79,7 @@ public class Compilador {
         System.out.println("Variable: " + entry.getKey() + ", Tipo: " + entry.getValue());
       }
 
-      // Mostrar errores semánticos si existen
+      // Mostrar errores semánticos
       if (!erroresSemanticos.isEmpty()) {
         System.out.println("\nErrores semánticos encontrados:");
         for (String error : erroresSemanticos) {
@@ -38,14 +87,13 @@ public class Compilador {
         }
       }
 
-      // Mostrar errores léxicos si existen - Corregido para usar la lista local
+      // Mostrar errores léxicos
       if (!tablaErrores.isEmpty()) {
         System.out.println("\nErrores léxicos encontrados:");
         for (String error : tablaErrores) {
           System.out.println(error);
         }
       }
-
     } catch (FileNotFoundException e) {
       System.out.println("Archivo no encontrado: " + e.getMessage());
     } catch (ParseException e) {
@@ -229,27 +277,31 @@ TOKEN: // Manejo de Errores
 }
 
 // Definición de la gramática - Análisis Sintáctico
-void programa() :
-{}
+NodoAST programa() :
+{ NodoAST raiz = new NodoAST("programa", "programa"); NodoAST subNodo; }
 {
   <INICIO> <MAIN> <LLAVEIZQ>
-  (declaracion() | asignacion() | ciclo() | condicional() | llamadaFuncion() | declaracionFuncion())*
+  (
+    (subNodo = declaracion() { raiz.agregarHijo(subNodo); }) |
+    (subNodo = asignacion() { raiz.agregarHijo(subNodo); }) |
+    (subNodo = ciclo() { raiz.agregarHijo(subNodo); }) |
+    (subNodo = condicional() { raiz.agregarHijo(subNodo); }) |
+    (subNodo = llamadaFuncion() { raiz.agregarHijo(subNodo); }) |
+    (subNodo = declaracionFuncion() { raiz.agregarHijo(subNodo); })
+  )*
   <LLAVEDER> <FIN>
   <EOF>
+  { astRaiz = raiz; return raiz; }
 }
 
-void declaracion() :
-{
-  Token tipo, id;
-  String tipoAsignacion = null;
-}
+NodoAST declaracion() :
+{ Token tipo, id; NodoAST nodo; NodoAST nodoExpr = null; }
 {
   <VAR>
-  (
-    tipo = <ENT> | tipo = <FLOT> | tipo = <BOOL> | tipo = <CAD>
-  )
+  (tipo = <ENT> | tipo = <FLOT> | tipo = <BOOL> | tipo = <CAD>)
   id = <IDENTIFICADOR>
   {
+    nodo = new NodoAST(id.image, "declaracion_" + tipo.image);
     if (existeVariable(id.image)) {
       agregarErrorSemantico("Error semántico: Variable '" + id.image + "' ya declarada");
     } else {
@@ -257,26 +309,25 @@ void declaracion() :
     }
   }
   (
-    <IGUAL> tipoAsignacion = expresion()
+    <IGUAL> nodoExpr = expresion()
     {
-      // Verificar compatibilidad de tipos
-      if (!sonTiposCompatibles(tipo.image, tipoAsignacion)) {
-        agregarErrorSemantico("Error semántico: No se puede asignar un valor de tipo '" + tipoAsignacion +
-                             "' a una variable de tipo '" + tipo.image + "'");
+      nodo.agregarHijo(nodoExpr);
+      if (!sonTiposCompatibles(tipo.image, nodoExpr.getTipo())) {
+        agregarErrorSemantico("Error semántico: No se puede asignar un valor de tipo '" + nodoExpr.getTipo() +
+                              "' a una variable de tipo '" + tipo.image + "'");
       }
     }
   )?
   <DELIMITADOR>
+  { return nodo; }
 }
 
-void asignacion() :
-{
-  Token id;
-  String tipoVar, tipoValor;
-}
+NodoAST asignacion() :
+{ Token id; NodoAST nodo; NodoAST nodoExpr; String tipoVar; }
 {
   id = <IDENTIFICADOR>
   {
+    nodo = new NodoAST(id.image, "asignacion");
     if (!existeVariable(id.image)) {
       agregarErrorSemantico("Error semántico: Variable '" + id.image + "' no declarada");
       tipoVar = "desconocido";
@@ -284,137 +335,131 @@ void asignacion() :
       tipoVar = obtenerTipo(id.image);
     }
   }
-  <IGUAL> tipoValor = expresion()
+  <IGUAL> nodoExpr = expresion()
   {
-    if (existeVariable(id.image) && !sonTiposCompatibles(tipoVar, tipoValor)) {
-      agregarErrorSemantico("Error semántico: No se puede asignar un valor de tipo '" + tipoValor +
-                          "' a una variable de tipo '" + tipoVar + "'");
+    nodo.agregarHijo(nodoExpr);
+    if (existeVariable(id.image) && !sonTiposCompatibles(tipoVar, nodoExpr.getTipo())) {
+      agregarErrorSemantico("Error semántico: No se puede asignar un valor de tipo '" + nodoExpr.getTipo() +
+                            "' a una variable de tipo '" + tipoVar + "'");
     }
   }
   <DELIMITADOR>
+  { return nodo; }
 }
 
-String expresion() :
+NodoAST expresion() :
+{ NodoAST nodoIzq, nodoDer; NodoAST nodoOp = null; }
 {
-  String tipo1, tipo2;
-  String tipoResultante;
-}
-{
-  tipo1 = termino()
-  {
-    tipoResultante = tipo1;
-  }
+  nodoIzq = termino()
   (
-    operador() tipo2 = termino()
+    { String op = null; }
+    ( <MAS> { op = "mas"; } | <MENOS> { op = "menos"; } | <MULT> { op = "mult"; } | <DIV> { op = "div"; }
+    | <RES> { op = "res"; } | <AND> { op = "and"; } | <OR> { op = "or"; } | <CONCATENAR> { op = "concatenar"; } )
+    nodoDer = termino()
     {
-      // Determinar el tipo resultante de la operación según las reglas
-      if (tipo1.equals("cad") || tipo2.equals("cad")) {
-        tipoResultante = "cad";
-      } else if (tipo1.equals("flot") || tipo2.equals("flot")) {
-        tipoResultante = "flot";
-      } else {
-        tipoResultante = "ent";
-      }
+      nodoOp = new NodoAST(op, "operador");
+      nodoOp.agregarHijo(nodoIzq);
+      nodoOp.agregarHijo(nodoDer);
+      nodoIzq = nodoOp;
     }
   )*
-  {
-    return tipoResultante;
-  }
+  { return nodoIzq; }
 }
 
-// Modificamos termino() para evitar conflictos y devolver el tipo
-String termino() :
-{
-  Token valor = null, id = null;
-  String tipo = "desconocido";
-}
+NodoAST termino() :
+{ Token valor = null, id = null; NodoAST nodo; }
 {
   (
-    valor = <ENTEROS>
-    {
-      tipo = "ent";
-    }
-    |
-    valor = <NUMERODECIMAL>
-    {
-      tipo = "flot";
-    }
-    |
-    valor = <VCAD>
-    {
-      tipo = "cad";
-    }
-    |
-    (<PARENIZQ> tipo = expresion() <PARENDER>)
-    |
-    LOOKAHEAD(2)
-    tipo = llamadaFuncion()
-    |
+    valor = <ENTEROS> { nodo = new NodoAST(valor.image, "ent"); }
+  |
+    valor = <NUMERODECIMAL> { nodo = new NodoAST(valor.image, "flot"); }
+  |
+    valor = <VCAD> { nodo = new NodoAST(valor.image, "cad"); }
+  |
+    <PARENIZQ> nodo = expresion() <PARENDER>
+  |
+    LOOKAHEAD(2) nodo = llamadaFuncion()
+  |
     id = <IDENTIFICADOR>
     {
       if (!existeVariable(id.image)) {
         agregarErrorSemantico("Error semántico: Variable '" + id.image + "' no declarada");
-        tipo = "desconocido";
+        nodo = new NodoAST(id.image, "desconocido");
       } else {
-        tipo = obtenerTipo(id.image);
+        nodo = new NodoAST(id.image, obtenerTipo(id.image));
       }
     }
   )
-  {
-    return tipo;
-  }
+  { return nodo; }
+}
+NodoAST ciclo() :
+{ NodoAST nodo; }
+{
+  (nodo = cicloFor()) | (nodo = cicloWhile())
+  { return nodo; }
 }
 
-void operador() :
-{}
+NodoAST cicloFor() :
+{ NodoAST nodo = new NodoAST("for", "ciclo"); NodoAST declAsig, cond, inc; }
 {
-  <MAS> | <MENOS> | <MULT> | <DIV> | <RES> | <AND> | <OR> | <CONCATENAR>
+  <FOR> <PARENIZQ>
+  (declAsig = declaracion() | declAsig = asignacion()) { nodo.agregarHijo(declAsig); }
+  cond = condicion() { nodo.agregarHijo(cond); }
+  <DELIMITADOR>
+  inc = incremento() { nodo.agregarHijo(inc); }
+  <PARENDER>
+  { NodoAST bloqueNodo = bloque(); nodo.agregarHijo(bloqueNodo); }
+  { return nodo; }
 }
 
-void ciclo() :
-{}
+NodoAST cicloWhile() :
+{ NodoAST nodo = new NodoAST("while", "ciclo"); }
 {
-  cicloFor() | cicloWhile()
+  <WHILE> <PARENIZQ>
+  { NodoAST cond = condicion(); nodo.agregarHijo(cond); }
+  <PARENDER>
+  { NodoAST bloqueNodo = bloque(); nodo.agregarHijo(bloqueNodo); }
+  { return nodo; }
 }
 
-void cicloFor() :
-{}
-{
-  <FOR> <PARENIZQ> (declaracion() | asignacion()) condicion() <DELIMITADOR> incremento() <PARENDER>
-  bloque()
-}
-
-void cicloWhile() :
-{}
-{
-  <WHILE> <PARENIZQ> condicion() <PARENDER>
-  bloque()
-}
-
-void condicion() :
-{
-  Token id1 = null, id2 = null;
-}
+NodoAST condicion() :
+{ Token id1 = null, id2 = null; NodoAST nodoIzq, nodoDer, nodoOp; String op; }
 {
   (
     id1 = <IDENTIFICADOR>
     {
       if (!existeVariable(id1.image)) {
         agregarErrorSemantico("Error semántico: Variable '" + id1.image + "' no declarada");
+        nodoIzq = new NodoAST(id1.image, "desconocido");
+      } else {
+        nodoIzq = new NodoAST(id1.image, obtenerTipo(id1.image));
       }
     }
-    | <ENTEROS> | <NUMERODECIMAL>
+  | <ENTEROS> { nodoIzq = new NodoAST(token.image, "ent"); }
+  | <NUMERODECIMAL> { nodoIzq = new NodoAST(token.image, "flot"); }
   )
-  operadorComparacion()
+  (
+    <IGUALDAD> { op = "=="; } | <DESIGUALDAD> { op = "!="; } | <MAYOR> { op = ">"; }
+  | <MENOR> { op = "<"; } | <MAYORIGUAL> { op = ">="; } | <MENORIGUAL> { op = "<="; }
+  ) { nodoOp = new NodoAST(op, "comparador"); }
   (
     id2 = <IDENTIFICADOR>
     {
       if (!existeVariable(id2.image)) {
         agregarErrorSemantico("Error semántico: Variable '" + id2.image + "' no declarada");
+        nodoDer = new NodoAST(id2.image, "desconocido");
+      } else {
+        nodoDer = new NodoAST(id2.image, obtenerTipo(id2.image));
       }
     }
-    | <ENTEROS> | <NUMERODECIMAL>
+  | <ENTEROS> { nodoDer = new NodoAST(token.image, "ent"); }
+  | <NUMERODECIMAL> { nodoDer = new NodoAST(token.image, "flot"); }
   )
+  {
+    nodoOp.agregarHijo(nodoIzq);
+    nodoOp.agregarHijo(nodoDer);
+    return nodoOp;
+  }
 }
 
 void operadorComparacion() :
@@ -423,117 +468,138 @@ void operadorComparacion() :
   <IGUALDAD> | <DESIGUALDAD> | <MAYOR> | <MENOR> | <MAYORIGUAL> | <MENORIGUAL>
 }
 
-void incremento() :
-{
-  Token id;
-}
+NodoAST incremento() :
+{ Token id; NodoAST nodo; String op; }
 {
   id = <IDENTIFICADOR>
   {
     if (!existeVariable(id.image)) {
       agregarErrorSemantico("Error semántico: Variable '" + id.image + "' no declarada");
+      nodo = new NodoAST(id.image, "desconocido");
     } else if (!obtenerTipo(id.image).equals("ent") && !obtenerTipo(id.image).equals("flot")) {
       agregarErrorSemantico("Error semántico: El incremento solo se puede aplicar a variables numéricas");
+      nodo = new NodoAST(id.image, "desconocido");
+    } else {
+      nodo = new NodoAST(id.image, obtenerTipo(id.image));
     }
   }
-  (<INC> | <DEC>)
+  ( <INC> { op = "inc"; } | <DEC> { op = "dec"; } )
+  {
+    NodoAST nodoOp = new NodoAST(op, "incremento");
+    nodoOp.agregarHijo(nodo);
+    return nodoOp;
+  }
 }
 
-void bloque() :
-{}
+NodoAST bloque() :
+{ NodoAST nodo = new NodoAST("bloque", "bloque"); NodoAST subNodo; }
 {
   <LLAVEIZQ>
-  (declaracion() | asignacion() | ciclo() | condicional() | llamadaFuncion())*
+  (
+    (subNodo = declaracion() { nodo.agregarHijo(subNodo); }) |
+    (subNodo = asignacion() { nodo.agregarHijo(subNodo); }) |
+    (subNodo = ciclo() { nodo.agregarHijo(subNodo); }) |
+    (subNodo = condicional() { nodo.agregarHijo(subNodo); }) |
+    (subNodo = llamadaFuncion() { nodo.agregarHijo(subNodo); })
+  )*
   <LLAVEDER>
+  { return nodo; }
 }
 
-void condicional() :
-{}
+NodoAST condicional() :
+{ NodoAST nodo = new NodoAST("si", "condicional"); NodoAST cond, bloqueSi, bloqueSino = null; }
 {
-  <SI> <PARENIZQ> condicion() <PARENDER>
-  bloque()
-  (<SINO> bloque())?
+  <SI> <PARENIZQ>
+  cond = condicion() { nodo.agregarHijo(cond); }
+  <PARENDER>
+  bloqueSi = bloque() { nodo.agregarHijo(bloqueSi); }
+  (
+    <SINO> bloqueSino = bloque() { nodo.agregarHijo(bloqueSino); }
+  )?
+  { return nodo; }
 }
 
 // Modificamos llamadaFuncion() para evitar conflictos y devolver el tipo
-String llamadaFuncion() :
-{
-  Token id = null;
-  String tipo = "desconocido";  // Tipo por defecto
-}
+NodoAST llamadaFuncion() :
+{ Token id = null; NodoAST nodo; }
 {
   (
     LOOKAHEAD(2)
-    (<MATHFUNC> { tipo = "flot"; }) |
-    (<RAMDONFUNC> { tipo = "ent"; }) |
-    (<ARRAYFUNC> { tipo = "void"; }) |
-    (<TIMERFUNC> { tipo = "void"; }) |
-    (<LEER> { tipo = "cad"; }) |
-    (<ESCRIBIR> { tipo = "void"; }) |
-    id = <IDENTIFICADOR>
-    {
-     // Aquí podríamos buscar el tipo de retorno de la función en una tabla de funciones
+    (<MATHFUNC> { nodo = new NodoAST("MathFunc", "flot"); }) |
+    (<RAMDONFUNC> { nodo = new NodoAST("RandomFunc", "ent"); }) |
+    (<ARRAYFUNC> { nodo = new NodoAST("ArrayFunc", "void"); }) |
+    (<TIMERFUNC> { nodo = new NodoAST("TimerFunc", "void"); }) |
+    (<LEER> { nodo = new NodoAST("leer", "cad"); }) |
+    (<ESCRIBIR> { nodo = new NodoAST("escribir", "void"); }) |
+    (id = <IDENTIFICADOR>
+     { nodo = new NodoAST(id.image, "llamada_funcion"); })
+  )
+  <PARENIZQ> (parametrosLlamada(nodo)) <PARENDER> <DELIMITADOR>
+  { return nodo; }
+}
 
-    // Por ahora, asumimos que no podemos determinar el tipo
-    tipo = "desconocido";
-    }
-    )
-    <PARENIZQ> (parametrosLlamada())? <PARENDER> <DELIMITADOR>
-    {
-      return tipo;
-    }
-  }
-
-  void parametrosLlamada() :
-  {
-    String tipoParam;
-  }
-  {
-    tipoParam = expresion() (<COMA> tipoParam = expresion())*
-  }
-
-  void declaracionFuncion() :
-  {
-    Token tipo, id;
-  }
-  {
-    (<PROC> | <FUNC>)
-    (
-      tipo = <VOID> | tipo = <ENT> | tipo = <FLOT> | tipo = <BOOL> | tipo = <CAD>
-    )
-    id = <IDENTIFICADOR>
-    <PARENIZQ> (parametrosDeclaracion())? <PARENDER>
-    bloqueFuncion()
-  }
-
-  void parametrosDeclaracion() :
-  {
-    Token tipo, id;
-  }
+void parametrosLlamada(NodoAST nodoPadre) :
+{ NodoAST param; }
+{
+  param = expresion() { nodoPadre.agregarHijo(param); }
+  (<COMA> param = expresion() { nodoPadre.agregarHijo(param); })*
+}
+  NodoAST declaracionFuncion() :
+  { Token tipo, id; NodoAST nodo; NodoAST params = null; }
   {
     (
-      tipo = <ENT> | tipo = <FLOT> | tipo = <BOOL> | tipo = <CAD> | tipo = <VAR>
+      <PROC> { nodo = new NodoAST("proc", "declaracion_funcion"); } |
+      <FUNC> { nodo = new NodoAST("func", "declaracion_funcion"); }
     )
+    (tipo = <VOID> | tipo = <ENT> | tipo = <FLOT> | tipo = <BOOL> | tipo = <CAD>)
+    id = <IDENTIFICADOR>
+    { nodo = new NodoAST(id.image, nodo.getTipo() + "_" + tipo.image); }
+    <PARENIZQ>
+    (params = parametrosDeclaracion() { nodo.agregarHijo(params); })?
+    <PARENDER>
+    { NodoAST bloqueNodo = bloqueFuncion(); nodo.agregarHijo(bloqueNodo); }
+    { return nodo; }
+  }
+
+  NodoAST parametrosDeclaracion() :
+  { Token tipo, id; NodoAST nodo = new NodoAST("parametros", "parametros"); }
+  {
+    (tipo = <ENT> | tipo = <FLOT> | tipo = <BOOL> | tipo = <CAD> | tipo = <VAR>)
     id = <IDENTIFICADOR>
     {
+      NodoAST param = new NodoAST(id.image, tipo.image);
+      nodo.agregarHijo(param);
       agregarVariable(id.image, tipo.image);
     }
-    (<COMA> parametrosDeclaracion())?
+    (
+      <COMA>
+      { NodoAST subParams = parametrosDeclaracion();
+        for (NodoAST hijo : subParams.getHijos()) { nodo.agregarHijo(hijo); } }
+    )?
+    { return nodo; }
   }
 
-  void bloqueFuncion() :
-  {}
+  NodoAST bloqueFuncion() :
+  { NodoAST nodo = new NodoAST("bloque", "bloque_funcion"); NodoAST subNodo; }
   {
     <LLAVEIZQ>
-    (declaracion() | asignacion() | ciclo() | condicional() | llamadaFuncion())*
-    (retorno())?
+    (
+      (subNodo = declaracion() { nodo.agregarHijo(subNodo); }) |
+      (subNodo = asignacion() { nodo.agregarHijo(subNodo); }) |
+      (subNodo = ciclo() { nodo.agregarHijo(subNodo); }) |
+      (subNodo = condicional() { nodo.agregarHijo(subNodo); }) |
+      (subNodo = llamadaFuncion() { nodo.agregarHijo(subNodo); })
+    )*
+    (subNodo = retorno() { nodo.agregarHijo(subNodo); })?
     <LLAVEDER>
+    { return nodo; }
   }
 
-  void retorno() :
+  NodoAST retorno() :
+  { NodoAST nodo = new NodoAST("return", "retorno"); NodoAST expr; }
   {
-    String tipoRetorno;
-  }
-  {
-    <RETURN> tipoRetorno = expresion() <DELIMITADOR>
+    <RETURN>
+    expr = expresion() { nodo.agregarHijo(expr); }
+    <DELIMITADOR>
+    { return nodo; }
   }
