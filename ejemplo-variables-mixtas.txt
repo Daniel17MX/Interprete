@@ -1,4 +1,5 @@
-Inicio Main {
+Inicio Main 
+{
     
     var ent contador = 1;
     var flot precio = 19.9;
@@ -27,7 +28,7 @@ Inicio Main {
     var ent resultado2 = x mas y;            
     var ent resultado3 = (x mas y) div z;    
     
-    var bool condicion = true;
+    var bool condicion = truecd;
     var ent errorTipo = condicion;           
     var flot errorTipo2 = nombre;            
 }
