@@ -1,0 +1,6 @@
+Inicio
+main {
+  var ent x = 5.2;
+  x = 10;
+}
+Fin

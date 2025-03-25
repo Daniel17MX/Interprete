@@ -1,146 +1,173 @@
 options {
-  STATIC = false;
-  DEBUG_PARSER = false;
-  DEBUG_TOKEN_MANAGER = false;
-  LOOKAHEAD = 2;  // Aumentamos el lookahead global para resolver conflictos
+    STATIC = false;
+    DEBUG_PARSER = false;
+    DEBUG_TOKEN_MANAGER = false;
+    LOOKAHEAD = 2;
 }
+
 PARSER_BEGIN(Compilador)
 import java.util.*;
 import java.io.*;
 
 public class Compilador {
-  static HashMap<String, String> tablaSimbolos = new HashMap<String, String>();
-  static ArrayList<String> erroresSemanticos = new ArrayList<String>();
-  static ArrayList<String> tablaErrores = new ArrayList<String>();
-
-  private NodoAST astRaiz;
-
-  static class NodoAST {
-    private String valor;
-    private String tipo;
-    private ArrayList<NodoAST> hijos;
-
-    public NodoAST(String valor, String tipo) {
-      this.valor = valor;
-      this.tipo = tipo;
-      this.hijos = new ArrayList<NodoAST>();
-    }
-
-    public void agregarHijo(NodoAST hijo) {
-      this.hijos.add(hijo);
-    }
-
-    public String getValor() { return valor; }
-    public String getTipo() { return tipo; }
-    public ArrayList<NodoAST> getHijos() { return hijos; }
-
-    public void imprimirArbol(int nivel) {
-      String indentacion = "|  ".repeat(nivel);
-      String nodoStr = (valor != null && !valor.isEmpty()) ? tipo.toUpperCase() + " " + valor : tipo.toUpperCase();
-      if (nivel == 0) {
-        System.out.println("|" + nodoStr);
-      } else {
-        System.out.println(indentacion + "|_" + nodoStr);
-      }
-      for (NodoAST hijo : hijos) {
-        hijo.imprimirArbol(nivel + 1);
-      }
-    }
-  }
-
-  public static void main(String args[]) throws ParseException {
-    try {
-      Compilador parser = new Compilador(new FileInputStream(args[0]));
-      parser.programa();
-      System.out.println("Análisis completado con éxito.");
-      if (parser.astRaiz != null) {
-        System.out.println("\nÁrbol Sintáctico Abstracto:");
-        parser.astRaiz.imprimirArbol(0);
-      }
-      System.out.println("\nTabla de símbolos:");
-      for (Map.Entry<String, String> entry : tablaSimbolos.entrySet()) {
-        System.out.println("Variable: " + entry.getKey() + ", Tipo: " + entry.getValue());
-      }
-      if (!erroresSemanticos.isEmpty()) {
-        System.out.println("\nErrores semánticos encontrados:");
-        for (String error : erroresSemanticos) {
-          System.out.println(error);
+    static class Simbolo {
+        String nombre;
+        String tipo;
+        String valor;
+        String direccion;
+        public Simbolo(String n, String t, String v, String d) {
+            nombre = n;
+            tipo = t;
+            valor = v;
+            direccion = d;
         }
-      }
-    } catch (FileNotFoundException e) {
-      System.out.println("Archivo no encontrado: " + e.getMessage());
-    } catch (ParseException e) {
-      System.out.println("Error de sintaxis: " + e.getMessage());
     }
-  }
 
-  // Métodos para manejar variables y errores
-  private static boolean existeVariable(String nombre) {
-    return tablaSimbolos.containsKey(nombre);
-  }
-
-  private static void agregarVariable(String nombre, String tipo) {
-    tablaSimbolos.put(nombre, tipo);
-  }
-
-  private static void agregarErrorSemantico(String mensaje) {
-    erroresSemanticos.add(mensaje);
-  }
-
-  // Método para obtener el tipo de una variable
-  private static String obtenerTipo(String nombre) {
-    return tablaSimbolos.getOrDefault(nombre, "desconocido");
-  }
-
-  // Método para verificar compatibilidad de tipos
-  private static boolean sonTiposCompatibles(String tipo1, String tipo2) {
-    // Tipos idénticos son compatibles
-    if (tipo1.equals(tipo2)) {
-      return true;
+    static class EntradaPila {
+        String valor;
+        String tipo;
+        public EntradaPila(String v, String t) {
+            valor = v;
+            tipo = t;
+        }
     }
-    // Enteros pueden asignarse a flotantes (conversión implícita)
-    if (tipo1.equals("flot") && tipo2.equals("ent")) {
-      return true;
+
+    private Stack<EntradaPila> pilaSemantica = new Stack<>(); // Pila estructurada
+    private ArrayList<Simbolo> tablaSimbolos = new ArrayList<>();
+    private ArrayList<String> tablaErrores = new ArrayList<>();
+    private ArrayList<String> codigoIntermedio = new ArrayList<>(); // Cuádruplos
+    private ArrayList<String> arbolExpresiones = new ArrayList<>(); // Prefija
+    private int tempCount = 0;
+    private int dirCount = 1000;
+
+    static class NodoAST {
+        private String valor;
+        private String tipo;
+        private ArrayList<NodoAST> hijos;
+
+        public NodoAST(String valor, String tipo) {
+            this.valor = valor;
+            this.tipo = tipo;
+            this.hijos = new ArrayList<>();
+        }
+
+        public void agregarHijo(NodoAST hijo) { this.hijos.add(hijo); }
+        public String getValor() { return valor; }
+        public String getTipo() { return tipo; }
+        public ArrayList<NodoAST> getHijos() { return hijos; }
+
+        public void imprimirArbol(int nivel, String prefijo) {
+            System.out.println(prefijo + "|" + tipo + (valor != null && !valor.isEmpty() ? " " + valor : ""));
+            String nuevoPrefijo = prefijo + "|  ";
+            for (int i = 0; i < hijos.size(); i++) {
+                hijos.get(i).imprimirArbol(nivel + 1, i == hijos.size() - 1 ? prefijo + "   " : nuevoPrefijo);
+            }
+        }
+
+        // Notación infija
+        public String toInfija() {
+            if (hijos.isEmpty()) return valor != null ? valor : tipo;
+            if (hijos.size() == 1) return tipo + " " + hijos.get(0).toInfija();
+            StringBuilder sb = new StringBuilder();
+            sb.append("(").append(hijos.get(0).toInfija()).append(" ").append(valor != null ? valor : tipo)
+              .append(" ").append(hijos.get(1).toInfija()).append(")");
+            return sb.toString();
+        }
+
+        // Notación postfija
+        public String toPostfija() {
+            if (hijos.isEmpty()) return valor != null ? valor : tipo;
+            if (hijos.size() == 1) return hijos.get(0).toPostfija() + " " + tipo;
+            return hijos.get(0).toPostfija() + " " + hijos.get(1).toPostfija() + " " + (valor != null ? valor : tipo);
+        }
     }
-    // Cualquier cosa puede concatenarse a una cadena
-    if (tipo1.equals("cad") && (tipo2.equals("ent") || tipo2.equals("flot") || tipo2.equals("bool"))) {
-      return true;
+
+    private NodoAST astRaiz;
+
+    public static void main(String args[]) throws ParseException {
+        try {
+            Compilador parser = new Compilador(new FileInputStream(args[0]));
+            parser.programa();
+            parser.imprimirResultados();
+        } catch (Exception e) {
+            System.out.println("Error: " + e.getMessage());
+        }
     }
-    // No se permiten otras combinaciones por ahora
-    return false;
-  }
+
+    private void imprimirResultados() {
+        System.out.println("\nÁrbol Sintáctico Abstracto:");
+        if (astRaiz != null) astRaiz.imprimirArbol(0, "");
+
+        System.out.println("\nÁrbol de Expresiones (Prefija):");
+        for (String expr : arbolExpresiones) System.out.println(expr);
+
+        System.out.println("\nExpresiones Infija:");
+        for (String expr : arbolExpresiones) {
+            String[] partes = expr.split("[(),]");
+            if (partes.length >= 3) System.out.println(partes[1] + " " + partes[0] + " " + partes[2]);
+        }
+
+        System.out.println("\nExpresiones Postfija:");
+        for (String expr : arbolExpresiones) {
+            String[] partes = expr.split("[(),]");
+            if (partes.length >= 3) System.out.println(partes[1] + " " + partes[2] + " " + partes[0]);
+        }
+
+        System.out.println("\nPila Semántica:");
+        for (EntradaPila e : pilaSemantica) System.out.println(e.tipo + " " + e.valor);
+
+
+        System.out.println("\nTabla de Símbolos:");
+        System.out.println("Nombre\tTipo\tValor\tDirección");
+        for (Simbolo s : tablaSimbolos) System.out.println(s.nombre + "\t" + s.tipo + "\t" + s.valor + "\t" + s.direccion);
+
+        System.out.println("\nErrores Semánticos:");
+        for (String err : tablaErrores) System.out.println(err);
+
+        System.out.println("\nCódigo Intermedio (Cuádruplos):");
+        for (String quad : codigoIntermedio) System.out.println(quad);
+    }
+
+    private String nuevaTemporal() { return "t" + tempCount++; }
+    private String nuevaDireccion() { return String.valueOf(dirCount++); }
+    private void agregarError(String msg, int linea) { tablaErrores.add("Línea " + linea + ": " + msg); }
+    private void agregarSimbolo(String n, String t, String v) { tablaSimbolos.add(new Simbolo(n, t, v, nuevaDireccion())); }
+    private String obtenerTipo(String nombre) {
+        for (Simbolo s : tablaSimbolos) if (s.nombre.equals(nombre)) return s.tipo;
+        return "desconocido";
+    }
+    private String obtenerValor(String nombre) {
+        for (Simbolo s : tablaSimbolos) if (s.nombre.equals(nombre)) return s.valor;
+        return null;
+    }
+    private void actualizarValor(String nombre, String valor) {
+        for (Simbolo s : tablaSimbolos) if (s.nombre.equals(nombre)) s.valor = valor;
+    }
+    private boolean tiposCompatibles(String t1, String t2) {
+        if (t1.equals(t2)) return true;
+        if (t1.equals("flot") && t2.equals("ent") || t1.equals("ent") && t2.equals("flot")) return true;
+        return false;
+    }
 }
 PARSER_END(Compilador)
 
 // Tokens a ignorar
-SKIP: { " " |"\t" |"\r" }
+SKIP: { " " | "\t" | "\r" }
 SPECIAL_TOKEN: { "\n" }
 
 // Definición de tokens
-TOKEN: //Variables
+TOKEN: // Variables
 {
-  <ENT: "ent"> |
-  <FLOT: "flot"> |
-  <BOOL: "bool"> |
-  <CAD: "cad"> |
-  <VAR: "var">
+  <ENT: "ent"> | <FLOT: "flot"> | <BOOL: "bool"> | <CAD: "cad"> | <VAR: "var">
 }
 
-TOKEN: //Operadores Logicos-Aritmeticos
+TOKEN: // Operadores Lógicos-Aritméticos
 {
-  <MAS: "mas"> |
-  <MENOS: "menos"> |
-  <MULT: "mult"> |
-  <DIV: "div"> |
-  <RES: "res"> |
-  <INC: "inc"> |
-  <DEC: "dec"> |
-  <AND: "AND"> |
-  <OR: "OR"> |
-  <NOT: "NOT">
+  <MAS: "mas"> | <MENOS: "menos"> | <MULT: "mult"> | <DIV: "div"> | <RES: "res"> |
+  <INC: "inc"> | <DEC: "dec"> | <AND: "AND"> | <OR: "OR"> | <NOT: "NOT">
 }
 
-TOKEN: //Comparadores
+TOKEN: // Comparadores
 {
   <IGUALDAD: "=="> |
   <IGUAL: "="> |
@@ -151,96 +178,73 @@ TOKEN: //Comparadores
   <MENORIGUAL: "<=">
 }
 
-TOKEN: //DIGITOS
+TOKEN: // Dígitos
 {
   <ENTEROS: (["0"-"9"])+> |
-  <NUMERODECIMAL: (["0"-"9"])*("."["0"-"9"]["0"-"9"])|(["0"-"9"])*("."["0"-"9"])+>
+  <NUMERODECIMAL: (["0"-"9"])("."["0"-"9"]["0"-"9"])|(["0"-"9"])("."["0"-"9"])+>
 }
 
 TOKEN: // Reconocimiento de valores
 {
-  <VERDADERO: "true"> |
-  <FALSO: "false">
+  <VERDADERO: "true"> | <FALSO: "false">
 }
 
-TOKEN: //CICLOS
+TOKEN: // Ciclos
 {
-  <FOR: "for"> |
-  <WHILE: "while">
+  <FOR: "for"> | <WHILE: "while">
 }
 
-TOKEN: //ARREGLOS
+TOKEN: // Arreglos
 {
-  <MATRIZ: "matrix"> |
-  <VECTOR: "vec">
+  <MATRIZ: "matrix"> | <VECTOR: "vec">
 }
 
-TOKEN: //CONDICIONALES
+TOKEN: // Condicionales
 {
-  <SI: "SI"> |
-  <SINO: "SINO">
+  <SI: "SI"> | <SINO: "SINO">
 }
 
-TOKEN: //LECTURA
+TOKEN: // Lectura
 {
   <LEER: "leer">
 }
 
-TOKEN: //ESCRITURA
+TOKEN: // Escritura
 {
   <ESCRIBIR: "escribir">
 }
 
-TOKEN: //SIMBOLOS DE DELIMITACION
+TOKEN: // Símbolos de delimitación
 {
-  <PUNTO: "."> |
-  <DELIMITADOR: ";"> |
-  <COMA: ","> |
-  <CORCHIZQ: "["> |
-  <CORCHDER: "]"> |
-  <LLAVEIZQ: "{"> |
-  <LLAVEDER: "}"> |
-  <PARENIZQ: "("> |
-  <PARENDER: ")"> |
-  <CONCATENAR: "+">
+  <PUNTO: "."> | <DELIMITADOR: ";"> | <COMA: ","> | <CORCHIZQ: "["> | <CORCHDER: "]"> |
+  <LLAVEIZQ: "{"> | <LLAVEDER: "}"> | <PARENIZQ: "("> | <PARENDER: ")"> | <CONCATENAR: "+">
 }
 
-TOKEN: //Palabras Reservadas
+TOKEN: // Palabras Reservadas
 {
-  <VOID: "void"> |
-  <PUBLICO: "publico"> |
-  <PRIVADO: "privado"> |
-  <ESTATICO: "estatico"> |
-  <RETURN: "return">
+  <VOID: "void"> | <PUBLICO: "publico"> | <PRIVADO: "privado"> | <ESTATICO: "estatico"> | <RETURN: "return">
 }
 
-TOKEN:
+TOKEN://Funciones de Clases
 {
-  <MATH: "Math"> |
-  <ARRAYCLASS: "Array"> |
-  <RANDOMCLASS: "Random"> |
-  <TIMERCLASS: "Timer">
+  <MATH: "Math"> | <ARRAYCLASS: "Array"> | <RANDOMCLASS: "Random"> | <TIMERCLASS: "Timer">
 }
 
-TOKEN: //FUNCIONES DE CLASES
+TOKEN: // Funciones de Clases
 {
   <RAMDONFUNC: (<RANDOMCLASS>)"."("next"|"equals")> |
   <ARRAYFUNC: (<ARRAYCLASS>)"."("clear"|"clone"|"copy"|"reverse")> |
   <TIMERFUNC: (<TIMERCLASS>)"."("start"|"stop")> |
   <MATHFUNC: (<MATH>)"."("abs"|"acos"|"acosh"|"tan"|"cos"|"sen"|"random"|"sqrt")> |
-  <INICIO: "Inicio"> |
-  <FIN: "Fin"> |
-  <MAIN: "Main"|"main"> |
-  <PROC: "proc"> |
-  <FUNC: "func">
+  <INICIO: "Inicio"> | <FIN: "Fin"> | <MAIN: "Main"|"main"> | <PROC: "proc"> | <FUNC: "func">
 }
 
-TOKEN: // IDENTIFICADOR
+TOKEN: // Identificador
 {
   <IDENTIFICADOR: ["a"-"z", "A"-"Z"](["a"-"z", "A"-"Z", "0"-"9", "_"])*>
 }
 
-TOKEN: //Reconocimiento de valores
+TOKEN: // Reconocimiento de valores
 {
   <VCAD: "\""(["a"-"z"]|["A"-"Z"]|["0"-"9"]|[","]|["."]|[" "]|[":"]|["="])+"\"">
 }
@@ -250,342 +254,382 @@ TOKEN: // Manejo de Errores
   <ERROR: ~[]>
 }
 
-// Definición de la gramática - Análisis Sintáctico
-NodoAST programa() :
+// Reglas sintácticas
+NodoAST programa():
 { NodoAST raiz = new NodoAST("", "PROGRAMA"); NodoAST subNodo; }
 {
-  <INICIO> { raiz.agregarHijo(new NodoAST("", "INICIO")); }
-  <MAIN> { raiz.agregarHijo(new NodoAST("", "Main")); }
-  <LLAVEIZQ> { raiz.agregarHijo(new NodoAST("", "{")); }
-  (
-    (subNodo = declaracion() { raiz.agregarHijo(subNodo); }) |
-    (subNodo = asignacion() { raiz.agregarHijo(subNodo); }) |
-    (subNodo = ciclo() { raiz.agregarHijo(subNodo); }) |
-    (subNodo = condicional() { raiz.agregarHijo(subNodo); }) |
-    (subNodo = llamadaFuncion() { raiz.agregarHijo(subNodo); }) |
-    (subNodo = declaracionFuncion() { raiz.agregarHijo(subNodo); })
-  )*
-  <LLAVEDER> { raiz.agregarHijo(new NodoAST("", "}")); }
-  <FIN> { raiz.agregarHijo(new NodoAST("", "FIN")); }
-  <EOF>
-  { astRaiz = raiz; return raiz; }
+    <INICIO> { raiz.agregarHijo(new NodoAST("", "INICIO")); }
+    ( (subNodo = funcion() { raiz.agregarHijo(subNodo); })
+    | (subNodo = declaracionArreglo() { raiz.agregarHijo(subNodo); }) )*
+    <MAIN> { raiz.agregarHijo(new NodoAST("", "MAIN")); }
+    <LLAVEIZQ> { raiz.agregarHijo(new NodoAST("", "{")); }
+    ( (subNodo = declaracion() { raiz.agregarHijo(subNodo); })
+    | (subNodo = asignacion() { raiz.agregarHijo(subNodo); })
+    | (subNodo = ciclo() { raiz.agregarHijo(subNodo); })
+    | (subNodo = condicional() { raiz.agregarHijo(subNodo); })
+    | (subNodo = escritura() { raiz.agregarHijo(subNodo); })
+    | (subNodo = procedimiento() { raiz.agregarHijo(subNodo); })// Agregar procedimientos
+    | (subNodo = llamadaProceto() { raiz.agregarHijo(subNodo); })// Agregar llamada a procedimientos
+    )*
+    <LLAVEDER> { raiz.agregarHijo(new NodoAST("", "}")); }
+    <FIN> { raiz.agregarHijo(new NodoAST("", "FIN")); }
+    <EOF>
+    { astRaiz = raiz; return raiz; }
 }
 
-NodoAST declaracion() :
-{ Token tipo, id; NodoAST nodo = new NodoAST("", "DECLARAR VARIABLE"); NodoAST nodoExpr = null; }
+NodoAST declaracion():
+{ Token tipo, id, varToken; NodoAST nodo = new NodoAST("", "DECLARACION"); NodoAST expr; }
 {
-  <VAR> { nodo.agregarHijo(new NodoAST("", "var")); }
-  (tipo = <ENT> | tipo = <FLOT> | tipo = <BOOL> | tipo = <CAD>)
-  { nodo.agregarHijo(new NodoAST(tipo.image, "Tipo")); }
-  id = <IDENTIFICADOR>
-  {
-    nodo.agregarHijo(new NodoAST(id.image, "Identificador"));
-    if (existeVariable(id.image)) {
-      agregarErrorSemantico("Error semántico: Variable '" + id.image + "' ya declarada");
-    } else {
-      agregarVariable(id.image, tipo.image);
-    }
-  }
-  (
-    <IGUAL> { nodo.agregarHijo(new NodoAST("", "=")); }
-    nodoExpr = expresion()
+    <VAR> { varToken = token; nodo.agregarHijo(new NodoAST("var", "MODIFICADOR")); }
+    ( <ENT> {tipo=token;} | <FLOT> {tipo=token;} | <BOOL> {tipo=token;} | <CAD> {tipo=token;} )
+    id = <IDENTIFICADOR>
     {
-      nodo.agregarHijo(nodoExpr);
-      if (!sonTiposCompatibles(tipo.image, nodoExpr.getTipo())) {
-        agregarErrorSemantico("Error semántico: No se puede asignar un valor de tipo '" +
-                              nodoExpr.getTipo() + "' a una variable de tipo '" + tipo.image + "'");
-      }
+        nodo.agregarHijo(new NodoAST(tipo.image, "TIPO"));
+        nodo.agregarHijo(new NodoAST(id.image, "ID"));
+        if (obtenerTipo(id.image) != "desconocido") {
+            agregarError("Variable '" + id.image + "' ya declarada", id.beginLine);
+        } else {
+            agregarSimbolo(id.image, tipo.image, "");
+            pilaSemantica.push(new EntradaPila(id.image, tipo.image));
+        }
     }
-  )?
-  <DELIMITADOR> { nodo.agregarHijo(new NodoAST("", ";")); }
-  { return nodo; }
+    ( <IGUAL> { nodo.agregarHijo(new NodoAST("=", "OPERADOR")); } (expr = expresion())
+        {
+            nodo.agregarHijo(expr);
+            EntradaPila valor = pilaSemantica.pop();
+            if (!tiposCompatibles(tipo.image, valor.tipo)) {
+                agregarError("Tipos incompatibles en declaración: " + tipo.image + " y " + valor.tipo, id.beginLine);
+            } else {
+                actualizarValor(id.image, valor.valor);
+                codigoIntermedio.add(tipo.image + " " + id.image + " = " + valor.valor);
+            }
+        }
+    )?
+    <DELIMITADOR> { nodo.agregarHijo(new NodoAST(";", "DELIMITADOR")); }
+    { return nodo; }
 }
 
-
-NodoAST asignacion() :
-{ Token id; NodoAST nodo; NodoAST nodoExpr; String tipoVar; }
+NodoAST asignacion():
+{ Token id; NodoAST nodo; NodoAST expr; }
 {
-  id = <IDENTIFICADOR>
-  {
-    nodo = new NodoAST(id.image, "ASIGNACION");
-    if (!existeVariable(id.image)) {
-      agregarErrorSemantico("Error semántico: Variable '" + id.image + "' no declarada");
-      tipoVar = "desconocido";
-    } else {
-      tipoVar = obtenerTipo(id.image);
-    }
-  }
-  <IGUAL> { nodo.agregarHijo(new NodoAST("", "=")); }
-  nodoExpr = expresion()
-  {
-    nodo.agregarHijo(nodoExpr);
-    if (existeVariable(id.image) && !sonTiposCompatibles(tipoVar, nodoExpr.getTipo())) {
-      agregarErrorSemantico("Error semántico: No se puede asignar un valor de tipo '" + nodoExpr.getTipo() +
-                            "' a una variable de tipo '" + tipoVar + "'");
-    }
-  }
-  <DELIMITADOR> { nodo.agregarHijo(new NodoAST("", ";")); }
-  { return nodo; }
-}
-
-NodoAST expresion() :
-{ NodoAST nodoIzq, nodoDer; NodoAST nodoOp = null; }
-{
-  nodoIzq = termino()
-  (
-    { String op = null; String tipoResultado = nodoIzq.getTipo(); }
-    ( <MAS> { op = "mas"; } | <CONCATENAR> { op = "concatenar"; } )
-    nodoDer = termino()
+    id = <IDENTIFICADOR>
     {
-      nodoOp = new NodoAST(op, "OPERADOR");
-      nodoOp.agregarHijo(nodoIzq);
-      nodoOp.agregarHijo(nodoDer);
-      // Determinar el tipo resultante
-      if (op.equals("concatenar") || (nodoIzq.getTipo().equals("cad") || nodoDer.getTipo().equals("cad"))) {
-        tipoResultado = "cad"; // Concatenar siempre resulta en cadena
-      } else if (nodoIzq.getTipo().equals("flot") || nodoDer.getTipo().equals("flot")) {
-        tipoResultado = "flot"; // Si hay un flotante, el resultado es flotante
-      } else if (nodoIzq.getTipo().equals("ent") && nodoDer.getTipo().equals("ent")) {
-        tipoResultado = "ent"; // Ambos enteros, resultado entero
-      } else {
-        agregarErrorSemantico("Error semántico: Operación '" + op + "' no válida entre '" +
-                              nodoIzq.getTipo() + "' y '" + nodoDer.getTipo() + "'");
-        tipoResultado = "desconocido";
-      }
-      nodoOp = new NodoAST(op, tipoResultado);
-      nodoOp.agregarHijo(nodoIzq);
-      nodoOp.agregarHijo(nodoDer);
-      nodoIzq = nodoOp;
+        nodo = new NodoAST(id.image, "ASIGNACION");
+        if (obtenerTipo(id.image) == "desconocido") {
+            agregarError("Variable '" + id.image + "' no declarada", id.beginLine);
+        }
     }
-  )*
-  { return nodoIzq; }
-}
-
-NodoAST termino() :
-{ Token valor = null, id = null; NodoAST nodo; }
-{
-  (
-    valor = <ENTEROS> { nodo = new NodoAST(valor.image, "ent"); }
-  | valor = <NUMERODECIMAL> { nodo = new NodoAST(valor.image, "flot"); }
-  | valor = <VCAD> { nodo = new NodoAST(valor.image, "cad"); }
-  | valor = <VERDADERO> { nodo = new NodoAST(valor.image, "bool"); }
-  | valor = <FALSO> { nodo = new NodoAST(valor.image, "bool"); }
-  | <PARENIZQ> nodo = expresion() <PARENDER>
-  | id = <IDENTIFICADOR>
+    <IGUAL> { nodo.agregarHijo(new NodoAST("=", "OPERADOR")); }
+    expr = expresion()
     {
-      if (!existeVariable(id.image)) {
-        agregarErrorSemantico("Error semántico: Variable '" + id.image + "' no declarada");
-        nodo = new NodoAST(id.image, "desconocido");
-      } else {
-        nodo = new NodoAST(id.image, obtenerTipo(id.image));
-      }
+        nodo.agregarHijo(expr);
+        EntradaPila valor = pilaSemantica.pop();
+        String tipoVar = obtenerTipo(id.image);
+        if (!tiposCompatibles(tipoVar, valor.tipo)) {
+            agregarError("Tipos incompatibles en asignación: " + tipoVar + " y " + valor.tipo, id.beginLine);
+        } else {
+            actualizarValor(id.image, valor.valor);
+            pilaSemantica.push(new EntradaPila(valor.valor, tipoVar));
+            codigoIntermedio.add(tipoVar + " " + id.image + " = " + valor.valor);
+        }
     }
-  )
-  { return nodo; }
+    <DELIMITADOR> { nodo.agregarHijo(new NodoAST(";", "DELIMITADOR")); }
+    { return nodo; }
 }
 
-NodoAST ciclo() :
-{ NodoAST nodo; }
+NodoAST expresion():
+{ NodoAST nodoIzq, nodoDer; String op; Token opToken = null; }
 {
-  (nodo = cicloFor()) | (nodo = cicloWhile())
-  { return nodo; }
+    nodoIzq = termino()
+    ( ( <MAS> {op="mas"; opToken=token;} | <MENOS> {op="menos"; opToken=token;}
+      | <MULT> {op="mult"; opToken=token;} | <DIV> {op="div"; opToken=token;}
+      | <CONCATENAR> {op="concat"; opToken=token;} )
+        nodoDer = termino()
+        {
+            EntradaPila v1 = pilaSemantica.pop();
+            EntradaPila v2 = pilaSemantica.pop();
+            String t1 = v1.tipo, t2 = v2.tipo;
+            String temp = nuevaTemporal();
+            String tipoResultado;
+
+            if (op.equals("concat")) {
+                tipoResultado = (t1.equals("cad") || t2.equals("cad")) ? "cad" : "error";
+                if (tipoResultado.equals("error")) {
+                    agregarError("Concatenación inválida: " + t1 + " y " + t2, opToken.beginLine);
+                }
+            } else {
+                tipoResultado = tiposCompatibles(t1, t2) ? "ent" : "error";
+                if (tipoResultado.equals("error")) {
+                    agregarError("Tipos incompatibles en " + op + ": " + t1 + ", " + t2, opToken.beginLine);
+                }
+            }
+
+            NodoAST nodoOp = new NodoAST(op, tipoResultado);
+            nodoOp.agregarHijo(nodoIzq);
+            nodoOp.agregarHijo(nodoDer);
+
+            pilaSemantica.push(new EntradaPila(temp, tipoResultado));
+            arbolExpresiones.add(op + "(" + v2.valor + "," + v1.valor + ")");
+            codigoIntermedio.add(op + " " + v2.valor + " " + v1.valor + " " + temp);
+            nodoIzq = nodoOp;
+        }
+    )*
+    { return nodoIzq; }
 }
 
-NodoAST cicloFor() :
-{ NodoAST nodo = new NodoAST("for", "ciclo"); NodoAST declAsig, cond, inc; }
+NodoAST termino():
+{ Token t; NodoAST nodo; }
 {
-  <FOR> <PARENIZQ>
-  (declAsig = declaracion() | declAsig = asignacion()) { nodo.agregarHijo(declAsig); }
-  cond = condicion() { nodo.agregarHijo(cond); }
-  <DELIMITADOR>
-  inc = incremento() { nodo.agregarHijo(inc); }
-  <PARENDER>
-  { NodoAST bloqueNodo = bloque(); nodo.agregarHijo(bloqueNodo); }
-  { return nodo; }
-}
-
-NodoAST cicloWhile() :
-{ NodoAST nodo = new NodoAST("while", "ciclo"); }
-{
-  <WHILE> <PARENIZQ>
-  { NodoAST cond = condicion(); nodo.agregarHijo(cond); }
-  <PARENDER>
-  { NodoAST bloqueNodo = bloque(); nodo.agregarHijo(bloqueNodo); }
-  { return nodo; }
-}
-
-NodoAST condicion() :
-{ Token id1 = null, id2 = null; NodoAST nodoIzq, nodoDer, nodoOp; String op; }
-{
-  (
-    id1 = <IDENTIFICADOR>
-    {
-      if (!existeVariable(id1.image)) {
-        agregarErrorSemantico("Error semántico: Variable '" + id1.image + "' no declarada");
-        nodoIzq = new NodoAST(id1.image, "Identificador");
-      } else {
-        nodoIzq = new NodoAST(id1.image, "Identificador");
+    ( t = <ENTEROS> { nodo = new NodoAST(t.image, "ent"); pilaSemantica.push(new EntradaPila(t.image, "ent")); }
+    | t = <NUMERODECIMAL> { nodo = new NodoAST(t.image, "flot"); pilaSemantica.push(new EntradaPila(t.image, "flot")); }
+    | t = <VCAD> { nodo = new NodoAST(t.image, "cad"); pilaSemantica.push(new EntradaPila(t.image, "cad")); }
+    | t = <VERDADERO> { nodo = new NodoAST(t.image, "bool"); pilaSemantica.push(new EntradaPila(t.image, "bool")); }
+    | t = <FALSO> { nodo = new NodoAST(t.image, "bool"); pilaSemantica.push(new EntradaPila(t.image, "bool")); }
+    | t = <IDENTIFICADOR>
+      {
+          String tipo = obtenerTipo(t.image);
+          if (tipo.equals("desconocido")) {
+              agregarError("Variable '" + t.image + "' no declarada", t.beginLine);
+          }
+          nodo = new NodoAST(t.image, tipo);
+          pilaSemantica.push(new EntradaPila(t.image, tipo));
       }
-    }
-  | <ENTEROS> { nodoIzq = new NodoAST(token.image, "num"); }
-  | <NUMERODECIMAL> { nodoIzq = new NodoAST(token.image, "num"); }
-  )
-  (
-    <IGUALDAD> { op = "=="; } | <DESIGUALDAD> { op = "!="; } | <MAYOR> { op = ">"; }
-  | <MENOR> { op = "<"; } | <MAYORIGUAL> { op = ">="; } | <MENORIGUAL> { op = "<="; }
-  ) { nodoOp = new NodoAST(op, "CONDICION"); }
-  (
-    id2 = <IDENTIFICADOR>
-    {
-      if (!existeVariable(id2.image)) {
-        agregarErrorSemantico("Error semántico: Variable '" + id2.image + "' no declarada");
-        nodoDer = new NodoAST(id2.image, "Identificador");
-      } else {
-        nodoDer = new NodoAST(id2.image, "Identificador");
-      }
-    }
-  | <ENTEROS> { nodoDer = new NodoAST(token.image, "num"); }
-  | <NUMERODECIMAL> { nodoDer = new NodoAST(token.image, "num"); }
-  )
-  {
-    nodoOp.agregarHijo(nodoIzq);
-    nodoOp.agregarHijo(nodoDer);
-    return nodoOp;
-  }
+    | <PARENIZQ> nodo = expresion() <PARENDER>
+    )
+    { return nodo; }
 }
 
-void operadorComparacion() :
-{}
+NodoAST condicion():
+{ NodoAST nodoIzq, nodoDer; String op; NodoAST nodoOp; Token opToken = null; }
 {
-  <IGUALDAD> | <DESIGUALDAD> | <MAYOR> | <MENOR> | <MAYORIGUAL> | <MENORIGUAL>
+    nodoIzq = termino()
+    ( ( <IGUALDAD> {op="=="; opToken=token;}
+    | <DESIGUALDAD> {op="!="; opToken=token;}
+    | <MAYOR> {op=">"; opToken=token;}
+    | <MENOR> {op="<"; opToken=token;}
+    | <MAYORIGUAL> {op=">="; opToken=token;}
+    | <MENORIGUAL> {op="<="; opToken=token;} )
+      nodoDer = termino()
+      {
+          EntradaPila v1 = pilaSemantica.remove(pilaSemantica.size() - 1);
+          EntradaPila v2 = pilaSemantica.remove(pilaSemantica.size() - 1);
+          String temp = nuevaTemporal();
+          nodoOp = new NodoAST(op, "bool");
+          nodoOp.agregarHijo(nodoIzq);
+          nodoOp.agregarHijo(nodoDer);
+          pilaSemantica.add(new EntradaPila(temp, "bool")); // Agregar EntradaPila en lugar de String
+          codigoIntermedio.add(op + " " + v2.valor + " " + v1.valor + " " + temp);
+          if (!tiposCompatibles(nodoIzq.getTipo(), nodoDer.getTipo())) {
+              agregarError("Tipos incompatibles en comparación: " + nodoIzq.getTipo() + ", " + nodoDer.getTipo(), opToken.beginLine);
+          }
+          return nodoOp;
+      }
+    )?
+    { return nodoIzq; }
 }
 
-NodoAST incremento() :
+NodoAST incremento():
 { Token id; NodoAST nodo; String op; }
 {
-  id = <IDENTIFICADOR>
-  {
-    if (!existeVariable(id.image)) {
-      agregarErrorSemantico("Error semántico: Variable '" + id.image + "' no declarada");
-      nodo = new NodoAST(id.image, "desconocido");
-    } else if (!obtenerTipo(id.image).equals("ent") && !obtenerTipo(id.image).equals("flot")) {
-      agregarErrorSemantico("Error semántico: El incremento solo se puede aplicar a variables numéricas");
-      nodo = new NodoAST(id.image, "desconocido");
-    } else {
-      nodo = new NodoAST(id.image, obtenerTipo(id.image));
-    }
-  }
-  ( <INC> { op = "inc"; } | <DEC> { op = "dec"; } )
-  {
-    NodoAST nodoOp = new NodoAST(op, "INCREMENTO");
-    nodoOp.agregarHijo(nodo);
-    return nodoOp;
-  }
-}
-
-NodoAST bloque() :
-{ NodoAST nodo = new NodoAST("", "{"); NodoAST subNodo; }
-{
-  <LLAVEIZQ>
-  (
-    (subNodo = declaracion() { nodo.agregarHijo(subNodo); }) |
-    (subNodo = asignacion() { nodo.agregarHijo(subNodo); }) |
-    (subNodo = ciclo() { nodo.agregarHijo(subNodo); }) |
-    (subNodo = condicional() { nodo.agregarHijo(subNodo); }) |
-    (subNodo = llamadaFuncion() { nodo.agregarHijo(subNodo); })
-  )*
-  <LLAVEDER> { nodo.agregarHijo(new NodoAST("", "}")); }
-  { return nodo; }
-}
-
-NodoAST condicional() :
-{ NodoAST nodo = new NodoAST("", "SI"); NodoAST cond, bloqueSi, bloqueSino = null; }
-{
-  <SI> <PARENIZQ> { nodo.agregarHijo(new NodoAST("", "(")); }
-  cond = condicion() { nodo.agregarHijo(cond); }
-  <PARENDER> { nodo.agregarHijo(new NodoAST("", ")")); }
-  { NodoAST bloqueNodo = bloque(); nodo.agregarHijo(bloqueNodo); }
-  (
-    <SINO> { nodo.agregarHijo(new NodoAST("", "SINO")); }
-    bloqueSino = bloque() { nodo.agregarHijo(bloqueSino); }
-  )?
-  { return nodo; }
-}
-
-// Modificamos llamadaFuncion() para evitar conflictos y devolver el tipo
-NodoAST llamadaFuncion() :
-{ Token id = null; NodoAST nodo = new NodoAST("", "ESCRIBIR"); }
-{
-  (<ESCRIBIR>)
-  <PARENIZQ> { nodo.agregarHijo(new NodoAST("", "(")); }
-  { NodoAST param = expresion(); nodo.agregarHijo(param); }
-  <PARENDER> { nodo.agregarHijo(new NodoAST("", ")")); }
-  <DELIMITADOR> { nodo.agregarHijo(new NodoAST("", ";")); }
-  { return nodo; }
-}
-
-void parametrosLlamada(NodoAST nodoPadre) :
-{ NodoAST param; }
-{
-  param = expresion() { nodoPadre.agregarHijo(param); }
-  (<COMA> param = expresion() { nodoPadre.agregarHijo(param); })*
-}
-  NodoAST declaracionFuncion() :
-  { Token tipo, id; NodoAST nodo; NodoAST params = null; }
-  {
-    (
-      <PROC> { nodo = new NodoAST("proc", "declaracion_funcion"); } |
-      <FUNC> { nodo = new NodoAST("func", "declaracion_funcion"); }
-    )
-    (tipo = <VOID> | tipo = <ENT> | tipo = <FLOT> | tipo = <BOOL> | tipo = <CAD>)
-    id = <IDENTIFICADOR>
-    { nodo = new NodoAST(id.image, nodo.getTipo() + "_" + tipo.image); }
-    <PARENIZQ>
-    (params = parametrosDeclaracion() { nodo.agregarHijo(params); })?
-    <PARENDER>
-    { NodoAST bloqueNodo = bloqueFuncion(); nodo.agregarHijo(bloqueNodo); }
-    { return nodo; }
-  }
-
-  NodoAST parametrosDeclaracion() :
-  { Token tipo, id; NodoAST nodo = new NodoAST("parametros", "parametros"); }
-  {
-    (tipo = <ENT> | tipo = <FLOT> | tipo = <BOOL> | tipo = <CAD> | tipo = <VAR>)
     id = <IDENTIFICADOR>
     {
-      NodoAST param = new NodoAST(id.image, tipo.image);
-      nodo.agregarHijo(param);
-      agregarVariable(id.image, tipo.image);
+        nodo = new NodoAST(id.image, "INCREMENTO");
+        if (obtenerTipo(id.image).equals("desconocido")) {
+            agregarError("Variable '" + id.image + "' no declarada", id.beginLine);
+        }
     }
-    (
-      <COMA>
-      { NodoAST subParams = parametrosDeclaracion();
-        for (NodoAST hijo : subParams.getHijos()) { nodo.agregarHijo(hijo); } }
+    ( <INC> {op="inc";} | <DEC> {op="dec";} )
+    {
+        String temp = nuevaTemporal();
+        codigoIntermedio.add(op + " " + id.image + " " + temp);
+        pilaSemantica.add(new EntradaPila(temp, obtenerTipo(id.image))); // Usa el tipo de la variable
+        nodo.agregarHijo(new NodoAST(op, "OPERADOR"));
+        return nodo;
+    }
+}
+
+NodoAST ciclo():
+{ NodoAST nodo; }
+{
+    ( nodo = cicloWhile()
+    | nodo = cicloFor()
+    )
+    { return nodo; }
+}
+
+NodoAST cicloWhile():
+{ NodoAST nodo = new NodoAST("while", "CICLO"); NodoAST cond, bloque; int labelInicio, labelFin; }
+{
+    <WHILE> <PARENIZQ> { nodo.agregarHijo(new NodoAST("(", "DELIMITADOR")); }
+    cond = condicion() { nodo.agregarHijo(cond); }
+    <PARENDER> { nodo.agregarHijo(new NodoAST(")", "DELIMITADOR")); }
+    bloque = bloque() { nodo.agregarHijo(bloque); }
+    {
+        EntradaPila condResult = pilaSemantica.pop();
+        labelInicio = codigoIntermedio.size();
+        codigoIntermedio.add("L" + labelInicio + ":");
+        codigoIntermedio.add(condResult.valor); // e.g., "<= x 3 t0"
+        labelFin = labelInicio + 4 + bloque.getHijos().size(); // Aproximación de tamaño del cuerpo
+        codigoIntermedio.add("if " + condResult.valor + " goto L" + (labelInicio + 1));
+        codigoIntermedio.add("goto L" + labelFin);
+        codigoIntermedio.add("L" + (labelInicio + 1) + ":");
+        // Cuerpo ya agrega sus cuádruplos
+        codigoIntermedio.add("goto L" + labelInicio);
+        codigoIntermedio.add("L" + labelFin + ":");
+    }
+    { return nodo; }
+}
+
+NodoAST cicloFor():
+{ NodoAST nodo = new NodoAST("for", "CICLO"); NodoAST init, cond, inc, bloque; }
+{
+    <FOR>
+    <PARENIZQ> { nodo.agregarHijo(new NodoAST("(", "DELIMITADOR")); }
+    init = inicializacionFor() { nodo.agregarHijo(init); }
+    cond = condicion() { nodo.agregarHijo(cond); }
+    <DELIMITADOR> { nodo.agregarHijo(new NodoAST(";", "DELIMITADOR")); }
+    inc = incremento() { nodo.agregarHijo(inc); }
+    <PARENDER> { nodo.agregarHijo(new NodoAST(")", "DELIMITADOR")); }
+    bloque = bloque() { nodo.agregarHijo(bloque); }
+    {
+      EntradaPila condResult = pilaSemantica.remove(pilaSemantica.size() - 1);
+      codigoIntermedio.add("if " + condResult.valor + " goto L" + codigoIntermedio.size());
+      codigoIntermedio.add("goto L" + (codigoIntermedio.size() + 1));
+    }
+    { return nodo; }
+}
+
+NodoAST inicializacionFor():
+{ NodoAST nodo; }
+{
+    ( nodo = declaracion()
+    | nodo = asignacion()
+    )
+    { return nodo; }
+}
+
+NodoAST bloque():
+{ NodoAST nodo = new NodoAST("", "BLOQUE"); NodoAST subNodo; }
+{
+    <LLAVEIZQ> { nodo.agregarHijo(new NodoAST("{", "DELIMITADOR")); }
+    ( (subNodo = declaracion() { nodo.agregarHijo(subNodo); })
+    | (subNodo = asignacion() { nodo.agregarHijo(subNodo); })
+    | (subNodo = ciclo() { nodo.agregarHijo(subNodo); })
+    | (subNodo = condicional() { nodo.agregarHijo(subNodo); })
+    | (subNodo = escritura() { nodo.agregarHijo(subNodo); })
+    | (subNodo = llamadaProceto() { nodo.agregarHijo(subNodo); })// Agregar llamada a procedimientos
+    | (subNodo = procedimiento() { nodo.agregarHijo(subNodo); })// Agregar procedimientos
+    )*
+    <LLAVEDER> { nodo.agregarHijo(new NodoAST("}", "DELIMITADOR")); }
+    { return nodo; }
+}
+
+NodoAST condicional():
+{
+    NodoAST nodo = new NodoAST("SI", "CONDICIONAL");
+    NodoAST cond, bloqueSi, bloqueSino = null;
+}
+{
+    <SI>
+    <PARENIZQ>
+    cond = condicion() { nodo.agregarHijo(cond); }
+    <PARENDER>
+    bloqueSi = bloque() {
+        NodoAST bloqueSiNode = new NodoAST("BLOQUE_SI", "BLOQUE");
+        bloqueSiNode.agregarHijo(bloqueSi);
+        nodo.agregarHijo(bloqueSiNode);
+    }
+    ( <SINO>
+        bloqueSino = bloque() {
+            NodoAST bloqueSinoNode = new NodoAST("BLOQUE_SINO", "BLOQUE");
+            bloqueSinoNode.agregarHijo(bloqueSino);
+            nodo.agregarHijo(bloqueSinoNode);
+        }
     )?
     { return nodo; }
-  }
+}
+NodoAST funcion():
+{ Token tipo, id; NodoAST nodo = new NodoAST("", "FUNCION"); NodoAST bloque; }
+{
+    ( <ENT> {tipo=token;} | <FLOT> {tipo=token;} | <BOOL> {tipo=token;} | <CAD> {tipo=token;} | <VOID> {tipo=token;} )
+    <FUNC> id = <IDENTIFICADOR>
+    {
+        nodo.agregarHijo(new NodoAST(tipo.image, "TIPO_RETORNO"));
+        nodo.agregarHijo(new NodoAST(id.image, "ID"));
+        if (obtenerTipo(id.image) != "desconocido") {
+            agregarError("Función '" + id.image + "' ya declarada", id.beginLine);
+        } else {
+            agregarSimbolo(id.image, "func_" + tipo.image, "");
+        }
+    }
+    <PARENIZQ> <PARENDER> // Sin parámetros por simplicidad
+    bloque = bloque() { nodo.agregarHijo(bloque); }
+    { codigoIntermedio.add("func " + id.image + " begin"); return nodo; }
+}
 
-  NodoAST bloqueFuncion() :
-  { NodoAST nodo = new NodoAST("bloque", "bloque_funcion"); NodoAST subNodo; }
-  {
-    <LLAVEIZQ>
-    (
-      (subNodo = declaracion() { nodo.agregarHijo(subNodo); }) |
-      (subNodo = asignacion() { nodo.agregarHijo(subNodo); }) |
-      (subNodo = ciclo() { nodo.agregarHijo(subNodo); }) |
-      (subNodo = condicional() { nodo.agregarHijo(subNodo); }) |
-      (subNodo = llamadaFuncion() { nodo.agregarHijo(subNodo); })
-    )*
-    (subNodo = retorno() { nodo.agregarHijo(subNodo); })?
-    <LLAVEDER>
+NodoAST procedimiento():
+{ Token id; NodoAST nodo = new NodoAST("", "PROCEDIMIENTO"); NodoAST bloque; }
+{
+    <PROC>  <VOID> id = <IDENTIFICADOR>
+    {
+        nodo.agregarHijo(new NodoAST(id.image, "ID"));
+        if (obtenerTipo(id.image) != "desconocido") {
+            agregarError("Procedimiento '" + id.image + "' ya declarado", id.beginLine);
+        } else {
+            agregarSimbolo(id.image, "proc", "");
+        }
+    }
+    <PARENIZQ> <PARENDER>   // Sin parámetros por simplicidad
+    bloque = bloque() { nodo.agregarHijo(bloque); }
     { return nodo; }
-  }
+}
 
-  NodoAST retorno() :
-  { NodoAST nodo = new NodoAST("return", "retorno"); NodoAST expr; }
-  {
-    <RETURN>
+NodoAST llamadaProceto():
+{ Token id; NodoAST nodo = new NodoAST("", "LLAMADA_PROCEDIMIENTO"); }
+{
+    id = <IDENTIFICADOR>
+    {
+        nodo.agregarHijo(new NodoAST(id.image, "ID"));
+        if (obtenerTipo(id.image) == "desconocido") {
+            agregarError("Procedimiento '" + id.image + "' no declarado", id.beginLine);
+        }
+    }
+    <PARENIZQ> <PARENDER> <DELIMITADOR>
+    { return nodo; }
+}
+
+NodoAST declaracionArreglo():
+{ Token tipo, id, varToken; NodoAST nodo = new NodoAST("", "DECLARACION_ARREGLO"); }
+{
+    <VAR> { varToken = token; nodo.agregarHijo(new NodoAST("var", "MODIFICADOR")); }
+    ( <MATRIZ> {tipo=token;} | <VECTOR> {tipo=token;} )
+    id = <IDENTIFICADOR>
+    <CORCHIZQ> <ENTEROS> <CORCHDER> // Tamaño fijo, e.g., vec x[5]
+    {
+        nodo.agregarHijo(new NodoAST(tipo.image, "TIPO"));
+        nodo.agregarHijo(new NodoAST(id.image, "ID"));
+        if (obtenerTipo(id.image) != "desconocido") {
+            agregarError("Arreglo '" + id.image + "' ya declarado", id.beginLine);
+        } else {
+            agregarSimbolo(id.image, tipo.image + "[]", "");
+            pilaSemantica.push(new EntradaPila(id.image, tipo.image + "[]"));
+            codigoIntermedio.add(tipo.image + "[] " + id.image + " = new " + tipo.image + "[5]"); // Tamaño fijo de ejemplo
+        }
+    }
+    <DELIMITADOR> { nodo.agregarHijo(new NodoAST(";", "DELIMITADOR")); }
+    { return nodo; }
+}
+
+NodoAST escritura():
+{ NodoAST nodo = new NodoAST("escribir", "ESCRITURA"); NodoAST expr; }
+{
+    <ESCRIBIR>
+    <PARENIZQ> { nodo.agregarHijo(new NodoAST("(", "DELIMITADOR")); }
     expr = expresion() { nodo.agregarHijo(expr); }
-    <DELIMITADOR>
-    { return nodo; }
-  }
+    <PARENDER> { nodo.agregarHijo(new NodoAST(")", "DELIMITADOR")); }
+    <DELIMITADOR> { nodo.agregarHijo(new NodoAST(";", "DELIMITADOR")); }
+    {
+        EntradaPila entrada = pilaSemantica.remove(pilaSemantica.size() - 1);
+        codigoIntermedio.add("print " + entrada.valor);
+        return nodo;
+    }

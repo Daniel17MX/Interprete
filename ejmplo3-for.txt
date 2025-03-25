@@ -1,0 +1,8 @@
+Inicio
+main {
+  var ent i = 0;
+  for (i = 0; i < 5; i inc) {
+    escribir("Iteracion");
+  }
+}
+Fin

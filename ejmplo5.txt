@@ -1,0 +1,8 @@
+Inicio
+main {
+  proc void saludar() {
+    escribir("Hola mundo");
+  }
+  saludar();
+}
+Fin

@@ -1,0 +1,10 @@
+Inicio
+main {
+  var ent x = 1;
+  var cad texto = "Hola";
+  while (x <= 3) {
+    escribir(texto + x);
+    x = x mas 1;
+  }
+}
+Fin

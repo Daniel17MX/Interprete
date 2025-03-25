@@ -1,0 +1,10 @@
+Inicio
+main {
+  var ent a = 5;
+  SI (a > 3) {
+    escribir("Es mayor");
+  } SINO {
+    escribir("Es menor o igual");
+  }
+}
+Fin
